@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bản đồ giá căn hộ TP.HCM</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<style>
+  :root { --teal:#0f8a8a; --ink:#1d2733; --muted:#5b6673; --line:#d9dee3; --bg:#ffffff; --panel:#f7f9fa; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; color:var(--ink); background:var(--bg); }
+  #app { display:flex; height:100%; }
+  #side { width:300px; flex:none; overflow:auto; background:var(--panel); border-right:1px solid var(--line); padding:14px 16px; }
+  #map { flex:1; }
+  h1 { font-size:17px; margin:0 0 2px; }
+  .sub { color:var(--muted); font-size:12px; margin-bottom:12px; }
+  label.h { display:block; font-weight:600; font-size:12px; margin:12px 0 4px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+  input[type=number], input[type=search], select { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px; font:inherit; background:#fff; }
+  .row { display:flex; gap:6px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chips label { display:flex; align-items:center; gap:4px; background:#fff; border:1px solid var(--line); border-radius:14px; padding:3px 9px; cursor:pointer; font-size:13px; }
+  button { margin-top:14px; width:100%; padding:7px; border:1px solid var(--line); background:#fff; border-radius:6px; cursor:pointer; font:inherit; }
+  #count { margin-top:12px; font-weight:600; }
+  .lbl { white-space:nowrap; display:inline-flex; align-items:center; background:#fff; border:1px solid #c9d1d6; border-radius:14px; box-shadow:0 1px 3px rgba(0,0,0,.18); font-size:12px; padding:2px 2px 2px 8px; transform:translate(-50%,-50%); }
+  .lbl b { background:var(--teal); color:#fff; border-radius:11px; padding:2px 7px; margin-left:6px; font-weight:600; }
+  .pill { white-space:nowrap; background:#222; color:#fff; border-radius:4px; padding:2px 6px; font-size:12px; font-weight:600; transform:translate(-50%,-50%); display:inline-block; }
+  .clu { background:var(--teal); color:#fff; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; border:3px solid rgba(255,255,255,.85); box-shadow:0 1px 4px rgba(0,0,0,.3); }
+  .pop h3 { margin:0 0 4px; font-size:14px; }
+  .pop .m { color:var(--muted); font-size:12px; margin-bottom:6px; }
+  .pop ul { margin:0; padding:0; list-style:none; max-height:220px; overflow:auto; }
+  .pop li { padding:4px 0; border-top:1px solid #eee; font-size:12.5px; }
+  .pop a { color:var(--teal); font-weight:600; text-decoration:none; }
+  #toggle { display:none; }
+  @media (max-width: 720px) {
+    #app { flex-direction:column; }
+    #side { width:100%; max-height:46vh; border-right:none; border-bottom:1px solid var(--line); display:none; }
+    #side.open { display:block; }
+    #toggle { display:block; position:absolute; z-index:1000; top:10px; right:10px; width:auto; margin:0; padding:6px 12px; box-shadow:0 1px 4px rgba(0,0,0,.2); }
+  }
+</style>
+</head>
+<body>
+<button id="toggle" onclick="document.getElementById('side').classList.toggle('open')">Bộ lọc</button>
+<div id="app">
+  <aside id="side">
+    <h1>Giá căn hộ TP.HCM</h1>
+    <div class="sub" id="sub">Đang tải dữ liệu…</div>
+
+    <label class="h" for="q">Tìm dự án / tiêu đề</label>
+    <input id="q" type="search" placeholder="VD: Vinhomes, Green River">
+
+    <label class="h">Giá (tỷ)</label>
+    <div class="row"><input id="pmin" type="number" step="0.1" placeholder="Từ"><input id="pmax" type="number" step="0.1" placeholder="Đến"></div>
+
+    <label class="h">Giá/m² (triệu)</label>
+    <div class="row"><input id="mmin" type="number" placeholder="Từ"><input id="mmax" type="number" placeholder="Đến"></div>
+
+    <label class="h">Diện tích (m²)</label>
+    <div class="row"><input id="smin" type="number" placeholder="Từ"><input id="smax" type="number" placeholder="Đến"></div>
+
+    <label class="h">Phòng ngủ</label>
+    <div class="chips" id="beds">
+      <label><input type="checkbox" value="1">1</label><label><input type="checkbox" value="2">2</label>
+      <label><input type="checkbox" value="3">3</label><label><input type="checkbox" value="4">4+</label>
+    </div>
+
+    <label class="h" for="area">Khu vực (quận/huyện cũ)</label>
+    <select id="area"><option value="">Tất cả</option></select>
+
+    <label class="h" for="ward">Phường mới</label>
+    <select id="ward"><option value="">Tất cả</option></select>
+
+    <label class="h" for="legal">Pháp lý</label>
+    <select id="legal"><option value="">Tất cả</option></select>
+
+    <label class="h" for="days">Ngày đăng</label>
+    <select id="days"><option value="">Bất kỳ</option><option value="7">7 ngày qua</option><option value="30">30 ngày qua</option><option value="90">90 ngày qua</option></select>
+
+    <label class="h">Nguồn</label>
+    <div class="chips" id="src"></div>
+
+    <label class="h">Lớp bản đồ</label>
+    <div class="chips"><label><input type="checkbox" id="newsOn" checked>Tin quy hoạch</label></div>
+
+    <button id="reset">Xóa bộ lọc</button>
+    <div id="count"></div>
+  </aside>
+  <div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const fmt = (v, d = 1) => v == null ? '–' : Number(v).toLocaleString('vi-VN', { maximumFractionDigits: d });
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const median = a => { const s = a.filter(x => x != null).sort((x, y) => x - y); if (!s.length) return null; const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+
+const map = L.map('map', { preferCanvas: true }).setView([10.78, 106.70], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+const cluster = L.markerClusterGroup({
+  disableClusteringAtZoom: 16, maxClusterRadius: 50, showCoverageOnHover: false,
+  iconCreateFunction: c => { const n = c.getChildCount(), s = n < 20 ? 34 : n < 100 ? 42 : 52;
+    return L.divIcon({ html: `<div class="clu" style="width:${s}px;height:${s}px">${n}</div>`, className: '', iconSize: [s, s] }); }
+}).addTo(map);
+const newsLayer = L.layerGroup().addTo(map);
+
+let L_ROWS = [], META = {};
+const hoverPopup = (marker, html) => {
+  marker.bindPopup(html, { maxWidth: 320, autoPan: false });
+  marker.on('mouseover', () => marker.openPopup());
+};
+const item = r => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">${fmt(r.price, 2)} tỷ</a> · ${fmt(r.size)} m² · ${r.beds ? r.beds + 'PN' : ''} · ${fmt(r.ppm2)} tr/m²<br><span style="color:#5b6673">${esc(r.title)}</span></li>`;
+
+function render() {
+  const f = {
+    q: $('q').value.trim().toLowerCase(), pmin: +$('pmin').value || 0, pmax: +$('pmax').value || 1e9,
+    mmin: +$('mmin').value || 0, mmax: +$('mmax').value || 1e9, smin: +$('smin').value || 0, smax: +$('smax').value || 1e9,
+    beds: [...document.querySelectorAll('#beds input:checked')].map(i => +i.value),
+    area: $('area').value, ward: $('ward').value, legal: $('legal').value, days: +$('days').value || 0,
+    src: [...document.querySelectorAll('#src input:checked')].map(i => i.value)
+  };
+  const since = f.days ? new Date(Date.now() - f.days * 864e5).toISOString().slice(0, 10) : '';
+  const rows = L_ROWS.filter(r =>
+    r.price >= f.pmin && r.price <= f.pmax &&
+    (r.ppm2 == null ? !$('mmin').value && !$('mmax').value : r.ppm2 >= f.mmin && r.ppm2 <= f.mmax) &&
+    (r.size ?? 0) >= f.smin && (r.size ?? 0) <= f.smax &&
+    (!f.beds.length || f.beds.some(b => b === 4 ? r.beds >= 4 : r.beds === b)) &&
+    (!f.area || r.area === f.area) && (!f.ward || r.ward === f.ward) && (!f.legal || r.legal === f.legal) &&
+    (!since || (r.date && r.date >= since)) && (!f.src.length || f.src.includes(r.src)) &&
+    (!f.q || `${r.projName ?? ''} ${r.title ?? ''}`.toLowerCase().includes(f.q)));
+
+  cluster.clearLayers();
+  const groups = new Map(), singles = [];
+  rows.forEach(r => r.proj ? (groups.get(r.proj) ?? groups.set(r.proj, []).get(r.proj)).push(r) : singles.push(r));
+  const markers = [];
+  groups.forEach(list => {
+    const lat = median(list.map(r => r.lat)), lng = median(list.map(r => r.lng)), p = median(list.map(r => r.ppm2));
+    const name = list[0].projName || list[0].proj;
+    const m = L.marker([lat, lng], { icon: L.divIcon({ className: '', iconSize: null,
+      html: `<div class="lbl">${esc(name)}<b>${p == null ? fmt(median(list.map(r => r.price)), 1) + ' tỷ' : fmt(p) + ' tr/m²'}</b></div>` }) });
+    hoverPopup(m, `<div class="pop"><h3>${esc(name)}</h3><div class="m">${list.length} tin · trung vị ${fmt(p)} tr/m² · ${esc(list[0].ward ?? '')}, ${esc(list[0].area ?? '')}</div><ul>${list.sort((a, b) => a.price - b.price).map(item).join('')}</ul></div>`);
+    markers.push(m);
+  });
+  singles.forEach(r => {
+    const m = L.marker([r.lat, r.lng], { icon: L.divIcon({ className: '', iconSize: null, html: `<div class="pill">${fmt(r.price, 1)} tỷ</div>` }) });
+    hoverPopup(m, `<div class="pop"><h3>${fmt(r.price, 2)} tỷ</h3><div class="m">${esc(r.ward ?? '')}, ${esc(r.area ?? '')} · ${esc(r.src)}</div><ul>${item(r)}</ul></div>`);
+    markers.push(m);
+  });
+  cluster.addLayers(markers);
+  $('count').textContent = `${rows.length.toLocaleString('vi-VN')} tin · ${groups.size} dự án`;
+}
+
+function fillSelect(id, values) { const s = $(id); values.forEach(v => s.add(new Option(v, v))); }
+
+Promise.all(['data/listings.json', 'data/meta.json', 'data/news.geojson'].map(u => fetch(u).then(r => r.json()))).then(([lst, meta, news]) => {
+  META = meta;
+  L_ROWS = lst.rows.map(a => Object.fromEntries(lst.fields.map((k, i) => [k, a[i]])));
+  $('sub').textContent = `Cập nhật ${meta.updated} · ${meta.count.toLocaleString('vi-VN')} tin có vị trí. Giá là giá chào bán.`;
+  fillSelect('area', meta.areas);
+  fillSelect('legal', meta.legal);
+  fillSelect('ward', [...new Set(L_ROWS.map(r => r.ward).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi')));
+  $('src').innerHTML = meta.sources.map(s => `<label><input type="checkbox" value="${esc(s)}">${esc(s)}</label>`).join('');
+  L.geoJSON(news, {
+    pointToLayer: (ft, ll) => L.circleMarker(ll, { radius: 8, color: '#b4541a', weight: 2, fillOpacity: .5 }),
+    onEachFeature: (ft, layer) => { const p = ft.properties;
+      layer.bindPopup(`<div class="pop"><h3>${esc(p['Tiêu đề'])}</h3><div class="m">${esc(p['Ngày tin'])} · ${esc(p['Loại'])} · tác động: ${esc(p['Tác động dự kiến'])}</div>${esc(p['Tóm tắt'])}<br><a href="${esc(p.Link)}" target="_blank" rel="noopener">Đọc tin</a></div>`); }
+  }).addTo(newsLayer);
+  document.querySelectorAll('#side input, #side select').forEach(el => el.addEventListener(el.type === 'search' || el.type === 'number' ? 'input' : 'change', render));
+  $('newsOn').addEventListener('change', e => e.target.checked ? newsLayer.addTo(map) : newsLayer.remove());
+  $('reset').onclick = () => { document.querySelectorAll('#side input[type=number], #side input[type=search]').forEach(i => i.value = '');
+    document.querySelectorAll('#side select').forEach(s => s.value = ''); document.querySelectorAll('#beds input, #src input').forEach(i => i.checked = false); render(); };
+  render();
+}).catch(e => { $('sub').textContent = 'Không tải được dữ liệu: ' + e.message + '. Mở trang qua máy chủ web (python3 -m http.server), không mở trực tiếp file.'; });
+</script>
+</body>
+</html>

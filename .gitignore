@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+bds/data/
+bds/raw_data/
+bds/phan_tich/
+bds/tin_quy_hoach/raw/
