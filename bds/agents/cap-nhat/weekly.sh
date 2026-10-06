@@ -21,7 +21,7 @@ else
   log "Batdongsan trả HTTP $bds (thường do Cloudflare), bỏ qua"
 fi
 python3 "$A/thu-thap/collect.py" build
-python3 "$A/thu-thap/collect.py" geocode --limit 300 || log "Geocode lỗi, dùng tọa độ cũ"
+python3 "$A/thu-thap/collect.py" geocode --limit 800 || log "Geocode lỗi, dùng tọa độ cũ"
 python3 "$A/thu-thap/collect.py" build
 
 log "3/6 Phân tích (Agent 2)"

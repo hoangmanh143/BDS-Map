@@ -10,7 +10,7 @@ Ví dụ:
   python3 collect.py chotot --max-pages 100
   python3 collect.py batdongsan --max-pages 700
   python3 collect.py batdongsan-projects --max-pages 72
-  python3 collect.py geocode      # tra tọa độ dự án còn thiếu
+  python3 collect.py geocode      # tra tọa độ dự án / đường (thay tọa độ tâm phường)
   python3 collect.py muaban | onehousing | homedy | bds123 | mogi | bdsvn   # nguồn bổ sung
   python3 collect.py build
 """
@@ -795,42 +795,116 @@ def build(args):
 
 # ---------------------------------------------------------------- geocode
 
-def geocode(args):
-    """Tra tọa độ cho dự án chưa có (Nominatim/OpenStreetMap, 1 yêu cầu/giây theo quy định).
-    Kết quả lưu data/geocode_cache.csv (cột: ma_du_an, lat, lng, query, nguon) và được build dùng lại."""
-    cache_path = os.path.join(DATA, "geocode_cache.csv")
-    cache = pd.read_csv(cache_path) if os.path.exists(cache_path) else pd.DataFrame(
-        columns=["ma_du_an", "lat", "lng", "query", "nguon"])
-    proj = pd.read_csv(os.path.join(DATA, "projects.csv"))
-    todo = proj[proj["Vĩ độ"].isna() & ~proj["Mã dự án"].isin(cache["ma_du_an"])]
+HCM_BOX = (10.35, 11.17, 106.35, 107.05)  # khung TP.HCM cũ (lat min, lat max, lng min, lng max)
+GEO_COLS = ["ma_du_an", "lat", "lng", "query", "nguon", "loai", "ket_qua"]
+MANUAL_GEO = "toa_do_tay.csv"   # sửa tay: ma_du_an,lat,lng,ghi_chu (vd tọa độ lấy từ Google Maps), ưu tiên cao nhất
+
+def street_key(street, ward):
+    return f"DUONG|{slug(street)}|{slug(ward)}"
+
+def is_centroid(df):
+    """Tọa độ nguồn chỉ là tâm phường/khu: một điểm dùng chung cho >=2 dự án khác nhau
+    hoặc >=3 tin không có dự án (Chotot/Homedy đặt mặc định khi người đăng không ghim vị trí)."""
+    pt = df["Vĩ độ"].round(4).astype(str) + "," + df["Kinh độ"].round(4).astype(str)
+    has = df["Vĩ độ"].notna()
+    g = df[has].groupby(pt[has])
+    shared = (g["Mã dự án"].nunique() >= 2) | (g["Mã dự án"].agg(lambda s: s.isna().sum()) >= 3)
+    return has & pt.map(shared).fillna(False).astype(bool)
+
+def _nominatim(q, ua, want):
+    """Trả (lat, lng, mô tả) nếu kết quả nằm trong TP.HCM cũ và đúng loại (want='du_an' | 'duong')."""
     import requests
-    new = []
+    r = requests.get("https://nominatim.openstreetmap.org/search", headers=ua, timeout=30,
+                     params={"q": q, "format": "jsonv2", "limit": 5, "countrycodes": "vn"})
+    if r.status_code == 429:
+        raise RuntimeError("429")
+    for js in (r.json() if r.status_code == 200 else []):
+        lat, lng = float(js["lat"]), float(js["lon"])
+        if not (HCM_BOX[0] <= lat <= HCM_BOX[1] and HCM_BOX[2] <= lng <= HCM_BOX[3]):
+            continue
+        cat, typ = js.get("category", ""), js.get("type", "")
+        if want == "duong" and cat == "highway":
+            return lat, lng, f"{cat}/{typ}"
+        # dự án: chỉ nhận tòa nhà / khu dân cư / địa điểm có tên, không nhận ranh giới phường, đường
+        if want == "du_an" and cat not in ("boundary", "highway", "place"):
+            return lat, lng, f"{cat}/{typ}"
+    return None
+
+def geocode(args):
+    """Tra tọa độ chính xác hơn tọa độ nguồn (Nominatim/OpenStreetMap, ~1 yêu cầu/giây theo quy định):
+    1. Mọi dự án đang có tin (theo tên dự án, rồi "Chung cư <tên>"): tọa độ tìm được sẽ THAY tọa độ nguồn,
+       vì Chotot/Homedy hay đặt nhiều dự án chung một điểm tâm phường.
+    2. Tin không thuộc dự án: tra "<đường>, <phường>" để đặt ít nhất đúng con đường.
+    Kết quả lưu data/geocode_cache.csv (cả lần không tìm thấy, để tuần sau không tra lại)."""
+    cache_path = os.path.join(DATA, "geocode_cache.csv")
+    cache = pd.read_csv(cache_path) if os.path.exists(cache_path) else pd.DataFrame(columns=GEO_COLS)
+    cache = cache.reindex(columns=GEO_COLS)
+    cache["loai"] = cache["loai"].fillna("du_an")
+    done = set(cache["ma_du_an"]) if not args.retry else set(cache.dropna(subset=["lat"])["ma_du_an"])
+    master = pd.read_csv(os.path.join(DATA, "master.csv"), low_memory=False)
+    act = master[master["Trạng thái tin"] == "Đang đăng"]
+    todo = []
+    pr = act.dropna(subset=["Mã dự án"]).groupby("Mã dự án").agg(
+        name=("Tên Chung cư/ Dự án", "first"), n=("ID tin", "size"),
+        ward=("Phường", lambda s: s.dropna().mode().iloc[0] if s.notna().any() else None))
+    for code, p in pr.sort_values("n", ascending=False).iterrows():   # dự án nhiều tin tra trước
+        if code not in done and isinstance(p["name"], str):
+            name = re.sub(r"^(chung cư|căn hộ|dự án|khu căn hộ)\s+", "", p["name"].strip(), flags=re.I)
+            qs = [f"{name}, {p['ward']}, Hồ Chí Minh" if p["ward"] else None, f"{name}, Hồ Chí Minh",
+                  f"Chung cư {name}, Hồ Chí Minh"]
+            todo.append((code, "du_an", [q for q in qs if q]))
+    st = act[act["Mã dự án"].isna() & act["Đường"].notna() & act["Phường"].notna()]
+    for (street, ward), _ in st.groupby(["Đường", "Phường"]).size().sort_values(ascending=False).items():
+        key = street_key(street, ward)
+        if key not in done:
+            todo.append((key, "duong", [f"{street}, {ward}, Hồ Chí Minh"]))
     ua = {"User-Agent": "bds-hcm-collector/1.0 (personal research; weekly batch)"}  # Nominatim yêu cầu UA riêng
-    for _, p in todo.head(args.limit).iterrows():
-        q = ", ".join(str(x) for x in [p["Tên dự án"], p.get("Phường"), "Hồ Chí Minh"] if pd.notna(x))
-        r = requests.get("https://nominatim.openstreetmap.org/search", headers=ua, timeout=30,
-                         params={"q": q, "format": "json", "limit": 1, "countrycodes": "vn"})
-        if r.status_code == 429:
-            print("  Nominatim báo quá tải (429), dừng; lần sau chạy tiếp từ chỗ dừng.", file=sys.stderr)
-            break
-        js = r.json() if r.status_code == 200 else []
-        # lưu cả kết quả không tìm thấy (lat trống) để tuần sau không tra lại
-        new.append({"ma_du_an": p["Mã dự án"], "lat": float(js[0]["lat"]) if js else None,
-                    "lng": float(js[0]["lon"]) if js else None, "query": q, "nguon": "Nominatim"})
-        time.sleep(1.5)
+    new = []
+    try:
+        for key, kind, qs in todo[:args.limit]:
+            hit = None
+            for q in qs:
+                hit = _nominatim(q, ua, kind)
+                time.sleep(1.1)
+                if hit:
+                    break
+            new.append({"ma_du_an": key, "lat": hit[0] if hit else None, "lng": hit[1] if hit else None,
+                        "query": q, "nguon": "Nominatim", "loai": kind, "ket_qua": hit[2] if hit else None})
+            if len(new) % 50 == 0:
+                print(f"  {len(new)}/{min(len(todo), args.limit)}", file=sys.stderr)
+    except RuntimeError:
+        print("  Nominatim báo quá tải (429), dừng; lần sau chạy tiếp từ chỗ dừng.", file=sys.stderr)
+    except Exception as e:  # mất mạng giữa chừng: vẫn lưu phần đã tra
+        print(f"  Lỗi mạng ({e}), lưu phần đã tra.", file=sys.stderr)
     if new:
-        cache = pd.concat([cache, pd.DataFrame(new)], ignore_index=True)
+        cache = pd.concat([cache, pd.DataFrame(new)], ignore_index=True).drop_duplicates("ma_du_an", keep="last")
         cache.to_csv(cache_path, index=False)
-    print(f"Tra được {sum(n['lat'] is not None for n in new)}/{len(new)} dự án đã thử "
-          f"(còn {len(todo) - len(new)} chưa thử). Chạy lại build để áp tọa độ.")
+    hits = sum(n["lat"] is not None for n in new)
+    print(f"Tra được {hits}/{len(new)} mục đã thử (còn {len(todo) - len(new)} chưa thử). "
+          f"Chạy lại build để áp tọa độ.")
 
 def apply_geocode_cache(df):
+    """Áp tọa độ đã tra: sửa tay > dự án (Nominatim) > đường (chỉ cho tin không dự án có tọa độ trống/tâm phường)."""
     path = os.path.join(DATA, "geocode_cache.csv")
-    if not os.path.exists(path):
-        return df
-    c = pd.read_csv(path).drop_duplicates("ma_du_an", keep="last").set_index("ma_du_an")
-    df["Vĩ độ"] = df["Vĩ độ"].fillna(df["Mã dự án"].map(c["lat"]))
-    df["Kinh độ"] = df["Kinh độ"].fillna(df["Mã dự án"].map(c["lng"]))
+    c = pd.read_csv(path).reindex(columns=GEO_COLS) if os.path.exists(path) else pd.DataFrame(columns=GEO_COLS)
+    c["loai"] = c["loai"].fillna("du_an")
+    c = c.dropna(subset=["lat", "lng"])
+    man = os.path.join(DATA, MANUAL_GEO)
+    if os.path.exists(man):
+        m = pd.read_csv(man).dropna(subset=["ma_du_an", "lat", "lng"])
+        c = pd.concat([c, m.assign(loai="du_an", nguon="Sửa tay")], ignore_index=True)
+    c = c.drop_duplicates("ma_du_an", keep="last").set_index("ma_du_an")
+    proj = c[c["loai"] == "du_an"]
+    hit = df["Mã dự án"].isin(proj.index)
+    df.loc[hit, "Vĩ độ"] = df.loc[hit, "Mã dự án"].map(proj["lat"])
+    df.loc[hit, "Kinh độ"] = df.loc[hit, "Mã dự án"].map(proj["lng"])
+    if "Đường" in df.columns:
+        strt = c[c["loai"] == "duong"]
+        key = pd.Series([street_key(s, w) if isinstance(s, str) and isinstance(w, str) else None
+                         for s, w in zip(df["Đường"], df["Phường"])], index=df.index)
+        weak = df["Mã dự án"].isna() & (df["Vĩ độ"].isna() | is_centroid(df)) & key.isin(strt.index)
+        df.loc[weak, "Vĩ độ"] = key[weak].map(strt["lat"])
+        df.loc[weak, "Kinh độ"] = key[weak].map(strt["lng"])
     return df
 
 # ---------------------------------------------------------------- main
@@ -849,7 +923,8 @@ def main():
         p.add_argument("--region", default="13000", help="Chotot region_v2 (13000 = HCM)")
         p.set_defaults(fn=fn)
     g = sub.add_parser("geocode")
-    g.add_argument("--limit", type=int, default=500)
+    g.add_argument("--limit", type=int, default=1500)
+    g.add_argument("--retry", action="store_true", help="tra lại cả mục lần trước không tìm thấy")
     g.set_defaults(fn=geocode)
     b = sub.add_parser("build")
     b.add_argument("--date", help="YYYY-MM-DD, mặc định hôm nay")

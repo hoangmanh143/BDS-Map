@@ -43,7 +43,7 @@ python3 collect.py bds123                 # HTML, 20 tin/trang (có cả Bình D
 python3 collect.py mogi                   # HTML, 15 tin/trang, bỏ tin cho thuê
 python3 collect.py bdsvn                  # batdongsan.vn (KHÁC batdongsan.com.vn)
 python3 collect.py build                  # chuẩn hóa, chống trùng, so tuần trước, xuất xlsx
-python3 collect.py geocode && python3 collect.py build   # tra tọa độ dự án còn thiếu
+python3 collect.py geocode && python3 collect.py build   # tra tọa độ dự án + đường, thay tọa độ tâm phường
 ```
 - Cài thư viện: nếu pip báo "No matching distribution", chạy
   `NO_PROXY=localhost,127.0.0.1 no_proxy=localhost,127.0.0.1 python3 -m pip install pandas openpyxl requests beautifulsoup4`.
@@ -59,7 +59,9 @@ python3 collect.py geocode && python3 collect.py build   # tra tọa độ dự 
 - Cùng một căn có thể được đăng trên nhiều trang; build chưa gộp trùng giữa các nguồn.
 - Build loại tin nguồn bổ sung có ngày đăng quá 180 ngày (`STALE_DAYS`): trang sâu của Mogi/Bds123 còn rất nhiều
   tin 2024 với giá cũ. Homedy không ghi ngày ở trang sâu nên không lọc được.
-- Geocode: Nominatim hay trả 429 qua proxy chung; script tự dừng, lưu tiến độ, lần sau chạy tiếp.
+- Geocode: tra mọi dự án đang có tin (và "đường, phường" cho tin không dự án), kết quả thay tọa độ nguồn vì Chotot/Homedy
+  hay dùng điểm tâm phường. Sửa tay trong `data/toa_do_tay.csv` (`ma_du_an,lat,lng,ghi_chu`) được ưu tiên nhất.
+  Nominatim hay trả 429 qua proxy chung; script tự dừng, lưu tiến độ, lần sau chạy tiếp (`--retry` tra lại mục chưa thấy).
 - Không dùng được: OneHousing (chỉ có hàng Hà Nội), Alonhadat, i-batdongsan (xác minh robot), Nhadat24h,
   Guland, Cafeland (Cloudflare). Không cố vượt các lớp chặn này.
 
