@@ -104,11 +104,14 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const median = a => { const s = a.filter(x => x != null).sort((x, y) => x - y); if (!s.length) return null; const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
 
 const map = L.map('map', { preferCanvas: true }).setView([10.78, 106.70], 12);
-// Nền CARTO Voyager (miễn phí, nhẹ, giống Google Maps); thêm lớp ảnh vệ tinh Esri để chuyển qua lại.
+// Nền miễn phí, không cần API key: Esri World Street Map (giống Google Maps), OpenStreetMap, ảnh vệ tinh Esri.
+const esri = 'https://server.arcgisonline.com/ArcGIS/rest/services/';
 const baseMaps = {
-  'Bản đồ': L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { maxZoom: 20, subdomains: 'abcd',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>' }),
-  'Vệ tinh': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19,
+  'Bản đồ': L.tileLayer(esri + 'World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19,
+    attribution: 'Bản đồ &copy; Esri, HERE, Garmin, &copy; OpenStreetMap' }),
+  'OpenStreetMap': L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }),
+  'Vệ tinh': L.tileLayer(esri + 'World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19,
     attribution: 'Ảnh &copy; Esri, Maxar, Earthstar Geographics' })
 };
 baseMaps['Bản đồ'].addTo(map);

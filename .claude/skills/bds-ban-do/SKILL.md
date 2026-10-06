@@ -1,6 +1,6 @@
 ---
 name: bds-ban-do
-description: Dựng và cập nhật trang web bản đồ giá căn hộ TP.HCM (Leaflet + nền CARTO Voyager/vệ tinh Esri, miễn phí): nhãn giá theo dự án, di chuột hiện link tin, bộ lọc, lớp tin quy hoạch.
+description: Dựng và cập nhật trang web bản đồ giá căn hộ TP.HCM (Leaflet + nền Esri Street Map/OSM/vệ tinh Esri, miễn phí): nhãn giá theo dự án, di chuột hiện link tin, bộ lọc, lớp tin quy hoạch.
 ---
 
 # Agent 4: Bản đồ giá căn hộ
@@ -8,7 +8,7 @@ description: Dựng và cập nhật trang web bản đồ giá căn hộ TP.HCM
 Dựng một lần, sau đó chỉ cần làm mới dữ liệu (Agent 5 gọi `build_map.py`). Trả lời bằng tiếng Việt.
 
 ## Thành phần
-- `<BDS_ROOT>/agents/ban-do/index.html`: trang mẫu (Leaflet 1.9.4 + markercluster từ unpkg, nền CARTO Voyager giống Google Maps + nút chuyển ảnh vệ tinh Esri).
+- `<BDS_ROOT>/agents/ban-do/index.html`: trang mẫu (Leaflet 1.9.4 + markercluster từ unpkg, nền Esri World Street Map (không cần API key; CARTO nay đòi key) + nút chuyển OpenStreetMap, ảnh vệ tinh Esri).
 - `<BDS_ROOT>/agents/ban-do/build_map.py`: xuất `web/data/listings.json`, `meta.json`, `news.geojson`; chép `index.html` vào `web/` nếu chưa có.
 - Trang chạy tĩnh, không cần máy chủ, không tốn phí bản đồ.
 
