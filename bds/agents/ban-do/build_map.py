@@ -71,6 +71,9 @@ def main():
     tin = pd.read_excel(os.path.join(ROOT, "raw_data", "BDS_HCM_raw_latest.xlsx"), sheet_name="Tin_dang")
     t = tin[(tin["Trạng thái tin"] == "Đang đăng") & tin["Vĩ độ"].notna() & tin["Giá (tỷ VNĐ)"].notna()].copy()
     t = t[t["Vĩ độ"].between(10.3, 11.2) & t["Kinh độ"].between(106.3, 107.1)]  # bỏ tọa độ ngoài HCM
+    # Homedy hay ghi tên quận làm tên dự án ("Quan 2 Tp Ho Chi Minh"): coi như tin không thuộc dự án
+    fake = t["Mã dự án"].fillna("").str.match(r"^(QUAN|HUYEN|THANH-PHO|TP)-.*HO-CHI-MINH$")
+    t.loc[fake, ["Mã dự án", "Tên Chung cư/ Dự án"]] = None
     t["area"] = t["Quận/Huyện cũ"].map(lambda v: AREA_ALIAS.get(v, v))
     posted = pd.to_datetime(t["Ngày đăng bán"], dayfirst=True, errors="coerce")
     ref = pd.to_datetime(tin["Ngày thu thập"], dayfirst=True).max()

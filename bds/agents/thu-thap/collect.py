@@ -825,8 +825,8 @@ def _nominatim(q, ua, want):
         cat, typ = js.get("category", ""), js.get("type", "")
         if want == "duong" and cat == "highway":
             return lat, lng, f"{cat}/{typ}"
-        # dự án: chỉ nhận tòa nhà / khu dân cư / địa điểm có tên, không nhận ranh giới phường, đường
-        if want == "du_an" and cat not in ("boundary", "highway", "place"):
+        # dự án: chỉ nhận tòa nhà / khu dân cư; bỏ ranh giới phường, đường, quán, trường... trùng tên
+        if want == "du_an" and (cat == "building" or (cat == "landuse" and typ in ("residential", "construction"))):
             return lat, lng, f"{cat}/{typ}"
     return None
 
@@ -894,6 +894,7 @@ def apply_geocode_cache(df):
         m = pd.read_csv(man).dropna(subset=["ma_du_an", "lat", "lng"])
         c = pd.concat([c, m.assign(loai="du_an", nguon="Sửa tay")], ignore_index=True)
     c = c.drop_duplicates("ma_du_an", keep="last").set_index("ma_du_an")
+    c[["lat", "lng"]] = c[["lat", "lng"]].apply(pd.to_numeric, errors="coerce").astype(float)  # concat có thể ra object
     proj = c[c["loai"] == "du_an"]
     hit = df["Mã dự án"].isin(proj.index)
     df.loc[hit, "Vĩ độ"] = df.loc[hit, "Mã dự án"].map(proj["lat"])
